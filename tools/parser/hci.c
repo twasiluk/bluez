@@ -819,8 +819,8 @@ static inline void ext_inquiry_data_dump(int level, struct frame *frm,
 
 	default:
 		p_indent(level, frm);
-		printf("Unknown type 0x%02x with %d bytes data\n",
-							type, len);
+		printf("Data:\n");
+		hex_dump(level + 1, frm, -1);
 		break;
 	}
 }
