@@ -2404,8 +2404,31 @@ static void eir_parse_name(uint8_t *eir, size_t eir_len,
 failed:
 	snprintf(buf, buf_len, "(unknown)");
 }
-
-static int print_advertising_devices(int dd, uint8_t filter_type)
+static void eir_raw(uint8_t *eir, size_t eir_len,
+					char*buf, size_t buf_len)
+{
+		uint16_t len = eir_len * 2;
+		
+		
+		char cvt[128]={0};
+		memset(cvt, 0, sizeof(memset));
+		
+		if(len > buf_len)
+			goto failed;
+		
+		for(int i=0; i<len; i++){
+				sprintf(cvt+i*2, "%02X", (int) eir[i]);
+		}
+		memcpy(buf, &cvt, len);
+		return;
+	
+failed:
+	snprintf(buf, buf_len, "Too much data (>128)");
+	
+}
+/**************/
+static int print_advertising_devices(int dd, uint8_t filter_type,
+					uint8_t disp_raw)
 {
 	unsigned char buf[HCI_MAX_EVENT_SIZE], *ptr;
 	struct hci_filter nf, of;
@@ -2460,15 +2483,26 @@ static int print_advertising_devices(int dd, uint8_t filter_type)
 		/* Ignoring multiple reports */
 		info = (le_advertising_info *) (meta->data + 1);
 		if (check_report_filter(filter_type, info)) {
-			char name[30];
+			char name[30] = {0};
 
 			memset(name, 0, sizeof(name));
 
-			ba2str(&info->bdaddr, addr);
+			
 			eir_parse_name(info->data, info->length,
 							name, sizeof(name) - 1);
 
-			printf("%s %s\n", addr, name);
+			ba2str(&info->bdaddr, addr);
+			if (disp_raw == 1){
+				char advert_data[128] = {0};
+				memset(advert_data, 0, sizeof(advert_data));
+				
+				eir_raw(info->data, info->length,
+							advert_data, sizeof(advert_data) - 1);
+				printf("%s %s %s\n", addr, name, advert_data);
+			}else{
+					printf("%s %s\n", addr, name);
+			}
+			
 		}
 	}
 
@@ -2482,6 +2516,7 @@ done:
 }
 
 static struct option lescan_options[] = {
+	{ "raw",	0, 0, 'r' },
 	{ "help",	0, 0, 'h' },
 	{ "static",	0, 0, 's' },
 	{ "privacy",	0, 0, 'p' },
@@ -2498,8 +2533,9 @@ static const char *lescan_help =
 	"\tlescan [--passive] set scan type passive (default active)\n"
 	"\tlescan [--whitelist] scan for address in the whitelist only\n"
 	"\tlescan [--discovery=g|l] enable general or limited discovery"
-		"procedure\n"
-	"\tlescan [--duplicates] don't filter duplicates\n";
+		" procedure\n"
+	"\tlescan [--duplicates] don't filter duplicates\n"
+	"\tlescan [--raw] display raw advertising data\n";
 
 static void cmd_lescan(int dev_id, int argc, char **argv)
 {
@@ -2511,7 +2547,9 @@ static void cmd_lescan(int dev_id, int argc, char **argv)
 	uint16_t interval = htobs(0x0010);
 	uint16_t window = htobs(0x0010);
 	uint8_t filter_dup = 0x01;
-
+	
+	uint8_t disp_raw = 0;
+	
 	for_each_opt(opt, lescan_options, NULL) {
 		switch (opt) {
 		case 's':
@@ -2525,6 +2563,9 @@ static void cmd_lescan(int dev_id, int argc, char **argv)
 			break;
 		case 'w':
 			filter_policy = 0x01; /* Whitelist */
+			break;
+		case 'r':
+			disp_raw = 1;
 			break;
 		case 'd':
 			filter_type = optarg[0];
@@ -2545,7 +2586,7 @@ static void cmd_lescan(int dev_id, int argc, char **argv)
 		}
 	}
 	helper_arg(0, 1, &argc, &argv, lescan_help);
-
+	
 	if (dev_id < 0)
 		dev_id = hci_get_route(NULL);
 
@@ -2570,7 +2611,7 @@ static void cmd_lescan(int dev_id, int argc, char **argv)
 
 	printf("LE Scan ...\n");
 
-	err = print_advertising_devices(dd, filter_type);
+	err = print_advertising_devices(dd, filter_type, disp_raw);
 	if (err < 0) {
 		perror("Could not receive advertising events");
 		exit(1);
